@@ -1,0 +1,1 @@
+{"job_id": "2bc14ece5aee4b05b7433e092d6b3b2f", "transcribed_text": "hello", "sign_sequence": [{"word": "hello", "original_words": ["hello"], "image_url": "https://media.signbsl.com/videos/bsl/signstation/HI.mp4", "phrase_length": 1, "source": "signbsl"}], "status": "completed", "algorithm": "greedy_phrase_first", "source": "text_input"}

@@ -1,0 +1,366 @@
+{% extends "base.html" %}
+
+{% block title %}Results - Speech-to-Sign Converter{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-10">
+        <div class="card shadow">
+            <div class="card-header bg-success text-white">
+                <h4 class="card-title mb-0">
+                    <i class="fas fa-sign-language me-2"></i>
+                    Sign Language Translation
+                </h4>
+            </div>
+            <div class="card-body">
+                <div id="loadingSection">
+                    <div class="text-center">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-3">Loading your sign language translation...</p>
+                    </div>
+                </div>
+
+                <div id="resultsSection" style="display: none;">
+                    <!-- Transcribed text -->
+                    <div class="mb-4">
+                        <h5><i class="fas fa-quote-left me-2"></i>Transcribed Text:</h5>
+                        <div id="transcribedText" class="alert alert-info"></div>
+                    </div>
+
+                    <!-- Sign language animations -->
+                    <div class="mb-4">
+                        <h5><i class="fas fa-play-circle me-2"></i>Sign Language Translation:</h5>
+                        <div id="signContainer" class="row g-3"></div>
+                    </div>
+
+                    <!-- Unified Playback controls -->
+                    <div class="text-center mb-4">
+                        <button id="playBtn" class="btn btn-primary me-2">
+                            <i class="fas fa-play"></i> Play
+                        </button>
+                        <button id="pauseBtn" class="btn btn-secondary me-2" disabled>
+                            <i class="fas fa-pause"></i> Pause
+                        </button>
+                        <button id="resetBtn" class="btn btn-outline-secondary me-2">
+                            <i class="fas fa-redo"></i> Reset
+                        </button>
+                    </div>
+
+                    <!-- Auto-play settings -->
+                    <div class="text-center mb-4">
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="checkbox" id="loopPlayback" checked>
+                            <label class="form-check-label" for="loopPlayback">
+                                Loop playback
+                            </label>
+                        </div>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="checkbox" id="showCaptions" checked>
+                            <label class="form-check-label" for="showCaptions">
+                                Show captions
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Current word display -->
+                    <div id="currentWordDisplay" class="text-center mb-4" style="display: none;">
+                        <div class="alert alert-warning">
+                            <h4>Current Word: <span id="currentWord"></span></h4>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="errorSection" style="display: none;">
+                    <div class="alert alert-danger">
+                        <h5><i class="fas fa-exclamation-triangle me-2"></i>Error</h5>
+                        <p id="errorMessage"></p>
+                    </div>
+                </div>
+
+                <div class="text-center mt-4">
+                    <a href="/" class="btn btn-primary">
+                        <i class="fas fa-upload me-2"></i>
+                        Upload Another File
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const jobId = '{{ job_id }}';
+    let currentSignIndex = 0;
+    let signSequence = [];
+    let playInterval = null;
+    let isPlaying = false;
+
+    // Load results when page loads
+    document.addEventListener('DOMContentLoaded', function () {
+        loadResults();
+    });
+
+    async function loadResults() {
+        try {
+            const response = await fetch(`/status/${jobId}`);
+            const result = await response.json();
+
+            if (result.status === 'completed') {
+                displayResults(result.result);
+            } else if (result.status === 'processing') {
+                // Still processing, poll again
+                setTimeout(loadResults, 2000);
+            } else {
+                showError(result.message);
+            }
+        } catch (error) {
+            showError('Failed to load results: ' + error.message);
+        }
+    }
+
+    function displayResults(data) {
+        document.getElementById('loadingSection').style.display = 'none';
+        document.getElementById('resultsSection').style.display = 'block';
+
+        // Display transcribed text
+        document.getElementById('transcribedText').textContent = (data && data.transcribed_text) ? data.transcribed_text : '';
+
+        // Display sign sequence
+        if (!data || !Array.isArray(data.sign_sequence)) {
+            // Try alternate key just in case
+            const alt = data && data.signSequence;
+            if (Array.isArray(alt)) {
+                signSequence = alt;
+            } else {
+                showError('Results are missing the sign sequence.');
+                return;
+            }
+        } else {
+            signSequence = data.sign_sequence;
+        }
+        const signContainer = document.getElementById('signContainer');
+
+        signSequence.forEach((sign, index) => {
+            const signCard = document.createElement('div');
+            signCard.className = 'col-md-3 col-sm-4 col-6';
+
+            // Determine if this is a video, image, or text fallback
+            const isVideo = sign.image_url.includes('signbsl.com') ||
+                sign.image_url.includes('.mp4') ||
+                sign.image_url.includes('youtube.com') ||
+                sign.image_url.includes('vimeo.com');
+
+            const isTextFallback = sign.source === 'text_fallback' ||
+                (sign.image_url && !sign.image_url.startsWith('http') && !sign.image_url.startsWith('data:'));
+
+            // Create media element based on type
+            let mediaElement;
+            if (isTextFallback) {
+                // Text fallback - display as plain text
+                mediaElement = `<div class="card-img-top d-flex align-items-center justify-content-center" 
+                           style="height: 200px; background-color: #f8f9fa; border: 2px dashed #dee2e6;">
+                    <div class="text-center p-3">
+                        <div class="text-muted" style="font-size: 14px;">${sign.image_url}</div>
+                    </div>
+                </div>`;
+            } else if (isVideo) {
+                if (sign.image_url.includes('youtube.com') || sign.image_url.includes('vimeo.com')) {
+                    // Embedded video
+                    mediaElement = `<iframe src="${sign.image_url}" class="card-img-top" 
+                               style="height: 200px; width: 100%; border: none;" 
+                               allowfullscreen></iframe>`;
+                } else {
+                    // Direct video with autoplay capabilities
+                    mediaElement = `<video class="card-img-top sign-video" style="height: 200px; width: 100%; object-fit: cover;" 
+                           controls muted data-index="${index}" playbackRate="1.25">
+                <source src="${sign.image_url}" type="video/mp4">
+                Your browser does not support the video tag.
+            </video>`;
+                }
+            } else {
+                // Image
+                mediaElement = `<img src="${sign.image_url}" class="card-img-top" alt="${sign.word}" 
+                           style="height: 200px; object-fit: cover;">`;
+            }
+
+            // Add source badge
+            let sourceBadge;
+            if (sign.source === 'signbsl') {
+                sourceBadge = '<span class="badge bg-success">SignBSL</span>';
+            } else if (sign.source === 'text_fallback') {
+                sourceBadge = '<span class="badge bg-warning text-dark">Text Only</span>';
+            } else {
+                sourceBadge = '<span class="badge bg-secondary">Demo</span>';
+            }
+
+            signCard.innerHTML = `
+            <div class="card sign-card" data-index="${index}">
+                ${mediaElement}
+                <div class="card-body text-center p-2">
+                    <small class="text-muted">${sign.word}</small><br>
+                    ${sourceBadge}
+                </div>
+            </div>
+        `;
+            signContainer.appendChild(signCard);
+        });
+
+        // Set up playback controls
+        setupPlaybackControls();
+    }
+
+    function setupPlaybackControls() {
+        const playBtn = document.getElementById('playBtn');
+        const pauseBtn = document.getElementById('pauseBtn');
+        const resetBtn = document.getElementById('resetBtn');
+
+        playBtn.addEventListener('click', unifiedPlay);
+        pauseBtn.addEventListener('click', pauseUnified);
+        resetBtn.addEventListener('click', resetUnified);
+
+        // Add event listeners for checkboxes
+        const loopPlaybackCheckbox = document.getElementById('loopPlayback');
+        const showCaptionsCheckbox = document.getElementById('showCaptions');
+
+        if (loopPlaybackCheckbox) {
+            loopPlaybackCheckbox.addEventListener('change', function () {
+                console.log('Loop playback:', this.checked);
+                // The loop functionality is already handled in playNextUnified()
+            });
+        }
+
+        if (showCaptionsCheckbox) {
+            showCaptionsCheckbox.addEventListener('change', function () {
+                console.log('Show captions:', this.checked);
+                // The captions functionality is already handled in playNextUnified()
+            });
+        }
+    }
+
+    // Unified playback: plays videos automatically; images advance after a fixed delay
+    let unifiedTimer = null;
+    function unifiedPlay() {
+        if (isPlaying) return;
+        isPlaying = true;
+        document.getElementById('playBtn').disabled = true;
+        document.getElementById('pauseBtn').disabled = false;
+        document.getElementById('currentWordDisplay').style.display = 'block';
+        playNextUnified();
+    }
+
+    function playNextUnified() {
+        if (!isPlaying) return;
+        if (currentSignIndex >= signSequence.length) {
+            // Loop if enabled
+            if (document.getElementById('loopPlayback').checked) {
+                currentSignIndex = 0;
+            } else {
+                pauseUnified();
+                return;
+            }
+        }
+
+        // Clear any previous timer/listeners
+        if (unifiedTimer) { clearTimeout(unifiedTimer); unifiedTimer = null; }
+
+        // Remove previous highlights
+        document.querySelectorAll('.sign-card').forEach(card => card.classList.remove('border-primary'));
+
+        const currentCard = document.querySelector(`[data-index="${currentSignIndex}"]`);
+        const currentItem = signSequence[currentSignIndex];
+        if (currentCard) {
+            currentCard.classList.add('border-primary');
+            currentCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+        document.getElementById('currentWord').textContent = currentItem.word;
+        if (document.getElementById('showCaptions').checked) {
+            showVideoCaption(currentItem.word);
+        }
+
+        // If this sign has a video element, play and wait for end; otherwise, wait a fixed delay
+        const videoEl = currentCard ? currentCard.querySelector('video.sign-video') : null;
+        if (videoEl) {
+            const onEnd = () => {
+                videoEl.removeEventListener('ended', onEnd);
+                currentSignIndex++;
+                playNextUnified();
+            };
+            videoEl.currentTime = 0;
+            videoEl.playbackRate = 1.25; // Set playback speed to 1.25x
+            videoEl.addEventListener('ended', onEnd);
+            const playPromise = videoEl.play();
+            if (playPromise && playPromise.catch) {
+                playPromise.catch(() => {
+                    // If autoplay blocked, fallback to timed advance
+                    unifiedTimer = setTimeout(() => { currentSignIndex++; playNextUnified(); }, 2000);
+                });
+            }
+        } else {
+            // Image placeholder: advance after 2 seconds
+            unifiedTimer = setTimeout(() => { currentSignIndex++; playNextUnified(); }, 2000);
+        }
+    }
+
+    function pauseUnified() {
+        isPlaying = false;
+        document.getElementById('playBtn').disabled = false;
+        document.getElementById('pauseBtn').disabled = true;
+        if (unifiedTimer) { clearTimeout(unifiedTimer); unifiedTimer = null; }
+        // Pause any playing videos
+        document.querySelectorAll('video.sign-video').forEach(v => v.pause());
+    }
+
+    function resetUnified() {
+        pauseUnified();
+        currentSignIndex = 0;
+        document.getElementById('currentWordDisplay').style.display = 'none';
+        document.querySelectorAll('.sign-card').forEach(card => card.classList.remove('border-primary'));
+    }
+
+    function showError(message) {
+        document.getElementById('loadingSection').style.display = 'none';
+        document.getElementById('errorSection').style.display = 'block';
+        document.getElementById('errorMessage').textContent = message;
+    }
+
+    // Removed separate auto-play implementation in favor of unified playback
+
+    function showVideoCaption(word) {
+        // Create or update caption overlay
+        let captionOverlay = document.getElementById('videoCaption');
+        if (!captionOverlay) {
+            captionOverlay = document.createElement('div');
+            captionOverlay.id = 'videoCaption';
+            captionOverlay.style.cssText = `
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            z-index: 1000;
+            transition: opacity 0.3s ease;
+        `;
+            document.body.appendChild(captionOverlay);
+        }
+
+        captionOverlay.textContent = word.toUpperCase();
+        captionOverlay.style.opacity = '1';
+
+        // Hide caption after 2 seconds
+        setTimeout(() => {
+            if (captionOverlay) {
+                captionOverlay.style.opacity = '0';
+            }
+        }, 2000);
+    }
+</script>
+{% endblock %}

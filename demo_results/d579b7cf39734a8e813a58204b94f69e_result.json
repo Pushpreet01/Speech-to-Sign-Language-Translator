@@ -1,0 +1,1 @@
+{"job_id": "d579b7cf39734a8e813a58204b94f69e", "transcribed_text": "how are you", "sign_sequence": [{"word": "how are you", "original_words": ["how", "are", "you"], "image_url": "https://media.signbsl.com/videos/bsl/signstation/101-06-76.mp4", "phrase_length": 3, "source": "signbsl"}], "status": "completed", "algorithm": "greedy_phrase_first", "source": "text_input"}
