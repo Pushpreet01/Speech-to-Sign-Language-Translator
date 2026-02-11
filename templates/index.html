@@ -204,6 +204,11 @@
 
 {% block scripts %}
 <script>
+    function showResultPage(resultData) {
+        sessionStorage.setItem('stt_latest_result', JSON.stringify(resultData));
+        window.location.href = '/results';
+    }
+
     // Handle example button clicks
     document.querySelectorAll('.example-btn').forEach(btn => {
         btn.addEventListener('click', function () {
@@ -253,7 +258,7 @@
                 statusMessage.innerHTML = '<i class="fas fa-check me-2"></i>Processing complete! Redirecting...';
 
                 setTimeout(() => {
-                    window.location.href = `/results/${result.job_id}`;
+                    showResultPage(result.result);
                 }, 1000);
             } else {
                 progressSection.style.display = 'none';
@@ -290,7 +295,7 @@
         statusMessage.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Uploading file...';
 
         try {
-            const response = await fetch('/upload?wait=1', {
+            const response = await fetch('/upload', {
                 method: 'POST',
                 body: formData
             });
@@ -298,21 +303,12 @@
             const result = await response.json();
 
             if (result.success) {
-                // If server waited and it's ready, redirect immediately
-                if (result.ready && result.redirect_url) {
-                    progressBar.style.width = '100%';
-                    progressBar.classList.remove('progress-bar-animated');
-                    statusMessage.innerHTML = '<i class="fas fa-check me-2"></i>Processing complete! Redirecting...';
-                    setTimeout(() => {
-                        window.location.href = result.redirect_url;
-                    }, 800);
-                } else {
-                    // Fall back to client-side polling
-                    progressBar.style.width = '60%';
-                    statusMessage.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Processing audio...';
-                    const jobId = result.job_id;
-                    pollStatus(jobId);
-                }
+                progressBar.style.width = '100%';
+                progressBar.classList.remove('progress-bar-animated');
+                statusMessage.innerHTML = '<i class="fas fa-check me-2"></i>Processing complete! Redirecting...';
+                setTimeout(() => {
+                    showResultPage(result.result);
+                }, 800);
             } else {
                 progressSection.style.display = 'none';
                 alert('Upload failed: ' + result.message);
@@ -322,38 +318,6 @@
             alert('Upload failed: ' + error.message);
         }
     });
-
-    async function pollStatus(jobId) {
-        const progressBar = document.getElementById('progressBar');
-        const statusMessage = document.getElementById('statusMessage');
-
-        try {
-            const response = await fetch(`/status/${jobId}`);
-            const result = await response.json();
-
-            if (result.status === 'completed') {
-                progressBar.style.width = '100%';
-                progressBar.classList.remove('progress-bar-animated');
-                statusMessage.innerHTML = '<i class="fas fa-check me-2"></i>Processing complete! Redirecting...';
-
-                setTimeout(() => {
-                    window.location.href = `/results/${jobId}`;
-                }, 1500);
-            } else if (result.status === 'processing') {
-                progressBar.style.width = '80%';
-                statusMessage.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>' + result.message;
-
-                // Poll again in 2 seconds
-                setTimeout(() => pollStatus(jobId), 2000);
-            } else {
-                progressSection.style.display = 'none';
-                alert('Processing failed: ' + result.message);
-            }
-        } catch (error) {
-            progressSection.style.display = 'none';
-            alert('Error checking status: ' + error.message);
-        }
-    }
 
     // Live Recording Functionality
     let mediaRecorder;
@@ -475,7 +439,7 @@
             const formData = new FormData();
             formData.append('audio_file', audioBlob, `recording.${fileExtension}`);
 
-            const response = await fetch('/upload?wait=1', {
+            const response = await fetch('/upload', {
                 method: 'POST',
                 body: formData
             });
@@ -483,19 +447,12 @@
             const result = await response.json();
 
             if (result.success) {
-                if (result.ready && result.redirect_url) {
-                    progressBar.style.width = '100%';
-                    progressBar.classList.remove('progress-bar-animated');
-                    statusMessage.innerHTML = '<i class="fas fa-check me-2"></i>Processing complete! Redirecting...';
-                    setTimeout(() => {
-                        window.location.href = result.redirect_url;
-                    }, 800);
-                } else {
-                    progressBar.style.width = '60%';
-                    statusMessage.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Processing audio...';
-                    const jobId = result.job_id;
-                    pollStatus(jobId);
-                }
+                progressBar.style.width = '100%';
+                progressBar.classList.remove('progress-bar-animated');
+                statusMessage.innerHTML = '<i class="fas fa-check me-2"></i>Processing complete! Redirecting...';
+                setTimeout(() => {
+                    showResultPage(result.result);
+                }, 800);
             } else {
                 progressSection.style.display = 'none';
                 alert('Upload failed: ' + result.message);
